@@ -1,6 +1,7 @@
 from rest_framework import serializers
+from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
-from auth_app.models import UserProfile
+from auth_app.models import UserProfile, Task, Board
 
 
 class RegistrationSerializer(serializers.ModelSerializer):
@@ -47,3 +48,28 @@ class RegistrationSerializer(serializers.ModelSerializer):
         )
 
         return user
+
+
+class CustomLoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+
+    def validate(self, data):
+        email = data.get("email")
+        password = data.get("password")
+
+        try:
+            user_data = User.objects.get(email=email)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("Ungültige Anfragedaten.")
+
+        user = authenticate(
+            username=user_data.username,
+            password=password
+        )
+
+        if not user:
+            raise serializers.ValidationError("Ungültige Anfragedaten.")
+
+        data["user"] = user
+        return data
