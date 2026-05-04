@@ -1,2 +1,2 @@
 # KanMind
-Bakcend fuer KanMind Dev. Ak. Projekt
+Backend für KanMind Dev. Ak. Projekt
