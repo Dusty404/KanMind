@@ -2,6 +2,15 @@ from rest_framework import serializers
 from kanban_app.models import Board, Task
 from auth_app.models import User, UserProfile
 
+class UserShortProfileSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(source="user.id", read_only=True)
+    email = serializers.EmailField(source="user.email")
+
+    class Meta:
+        model = UserProfile
+        fields = ["id", "email", "fullname"]
+
+
 class TaskSerializer(serializers.ModelSerializer):
     board = serializers.PrimaryKeyRelatedField(
         queryset=Board.objects.all()
@@ -36,19 +45,32 @@ class BoardsSerializer(serializers.ModelSerializer):
         return obj.tasks.filter(priority="high").count()
     
 
-
-class BoardsCreateSerializer(serializers.ModelSerializer):
-    members = serializers.PrimaryKeyRelatedField(
-        queryset=UserProfile.objects.all(),
-        many=True,
-        source="member",
-        write_only=True
-    )
+class BoardDetailSerializer(serializers.ModelSerializer):
+    tasks = TaskSerializer(many=True, read_only=True)
+    members = UserShortProfileSerializer(source="member", many=True, read_only=True)
 
     class Meta:
         model = Board
-        fields = ["id", "title", "members"]
-        read_only_fields = ["id"]
+        fields = [
+            "id",
+            "title",
+            "owner_id",
+            "members",
+            "tasks",
+        ]
+
+
+class BoardCreateSerializer(serializers.ModelSerializer):
+    members = serializers.PrimaryKeyRelatedField(queryset=UserProfile.objects.all(), many=True, source="member", write_only=True)
+    class Meta:
+        model = Board
+        fields = [
+            "id",
+            "title",
+            "owner_id",
+            "members",
+            "tasks",
+        ]
 
 
 class TaskSerializer(serializers.ModelSerializer):
@@ -59,3 +81,26 @@ class TaskSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
         fields = ["id", "title", "board"]
+
+
+class TaskDetailSerializer(serializers.ModelSerializer):
+    assignee = UserShortProfileSerializer(read_only=True)
+    reviewer = UserShortProfileSerializer(read_only=True)
+    comments_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Task
+        fields = [
+            "id",
+            "title",
+            "description",
+            "status",
+            "priority",
+            "assignee",
+            "reviewer",
+            "due_date",
+            "comments_count",
+        ]
+
+    def get_comments_count(self, obj):
+        return obj.comments.count()

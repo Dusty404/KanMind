@@ -1,11 +1,12 @@
 from django.db import models
 from auth_app.models import UserProfile, User
 
-# Create your models here.
+
 class Board(models.Model):
     title = models.CharField(max_length=255)
     member = models.ManyToManyField(UserProfile, related_name="boards")
     owner = models.ForeignKey(User, on_delete=models.CASCADE)
+
 
 class Task(models.Model):
     STATUS_CHOICES = [

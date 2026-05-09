@@ -1,7 +1,10 @@
-from django.urls import path
-from .views import BoardListAndCreateView, BoardDetailView
+from django.urls import path, include
+from .views import BoardViewSet
+from rest_framework import routers
+
+router = routers.SimpleRouter()
+router.register(r'boards', BoardViewSet, basename='boards')
 
 urlpatterns = [
-    path('boards/', BoardListAndCreateView.as_view()),
-    path('boards/<int:pk>/', BoardDetailView.as_view()),
+    path('', include(router.urls)),
 ]
