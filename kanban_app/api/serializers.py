@@ -73,6 +73,22 @@ class BoardCreateSerializer(serializers.ModelSerializer):
         ]
 
 
+class BoardUpdateResponseSerializer(serializers.ModelSerializer):
+    owner_data = serializers.SerializerMethodField()
+    members_data = UserShortProfileSerializer(source="member", many=True, read_only=True)
+
+    class Meta:
+        model = Board
+        fields = ["id", "title", "owner_data", "members_data"]
+
+    def get_owner_data(self, obj):
+        return {
+            "id": obj.owner.id,
+            "email": obj.owner.email,
+            "fullname": obj.owner.profile.fullname
+        }
+
+
 class TaskSerializer(serializers.ModelSerializer):
     board = serializers.PrimaryKeyRelatedField(
         queryset=Board.objects.all()
