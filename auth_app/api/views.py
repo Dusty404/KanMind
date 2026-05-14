@@ -1,5 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework import status
+from .serializers import RegistrationSerializer, CustomLoginSerializer
 from rest_framework import status, generics
 from ..models import Board
 from .serializers import RegistrationSerializer, CustomLoginSerializer, BoardsSerializer
@@ -26,6 +28,26 @@ class RegistrationView(APIView):
             }, status=status.HTTP_201_CREATED)        
         return Response({"Ungültige Anfragedaten"}, status=status.HTTP_400_BAD_REQUEST)
     
+
+class CustomLoginView(ObtainAuthToken):
+    permission_classes = [AllowAny]
+    serializer_class = CustomLoginSerializer
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            user = serializer.validated_data['user']
+            token, created = Token.objects.get_or_create(user=user)
+            return Response({
+                "token": token.key,
+                "fullname": user.profile.fullname,
+                "email": user.email,
+                "user_id": user.id
+            }, status=status.HTTP_200_OK)
+        return Response({"Ungültige Anfragedaten"}, status=status.HTTP_400_BAD_REQUEST)
+    
+    
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
 
 class CustomLoginView(ObtainAuthToken):
     permission_classes = [AllowAny]
