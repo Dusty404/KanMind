@@ -1,8 +1,8 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, generics, mixins, viewsets
-from kanban_app.models import Board, UserProfile
-from .serializers import BoardsSerializer, BoardDetailSerializer, BoardUpdateResponseSerializer
+from kanban_app.models import Board, UserProfile, User
+from .serializers import BoardsSerializer, BoardDetailSerializer, BoardUpdateResponseSerializer, UserShortProfileSerializer
 from .permission import IsOwnerOrReadOnly
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
@@ -51,7 +51,7 @@ class BoardViewSet(viewsets.ViewSet):
     def partial_update(self, request, pk=None):
         board = get_object_or_404(Board, pk=pk)
         self.check_object_permissions(request, board)
-        serializer = BoardsSerializer(board, data=request.data, partial=True)
+        serializer = BoardDetailSerializer(board, data=request.data, partial=True)
 
         if serializer.is_valid():
             member_ids = request.data.get("members", None)
@@ -77,3 +77,17 @@ class BoardViewSet(viewsets.ViewSet):
         self.check_object_permissions(request, board)
         board.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+    
+
+class TasksViewSet(viewsets.ViewSet):
+    pass
+    
+
+class EmailCheckView(APIView):
+    def get(self, request, email):
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response({"detail": "Email nicht gefunden. Die Email exestiert nicht."}, status=status.HTTP_404_NOT_FOUND)
+        response_serializer = UserShortProfileSerializer(user.profile)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)

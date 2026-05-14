@@ -47,7 +47,7 @@ class BoardsSerializer(serializers.ModelSerializer):
 
 class BoardDetailSerializer(serializers.ModelSerializer):
     tasks = TaskSerializer(many=True, read_only=True)
-    members = UserShortProfileSerializer(source="member", many=True, read_only=True)
+    members = serializers.PrimaryKeyRelatedField(many=True, queryset=User.objects.all(), required=False)
 
     class Meta:
         model = Board
@@ -58,6 +58,7 @@ class BoardDetailSerializer(serializers.ModelSerializer):
             "members",
             "tasks",
         ]
+        read_only_fields = ["id", "owner_id", "tasks"]
 
 
 class BoardCreateSerializer(serializers.ModelSerializer):
@@ -69,7 +70,6 @@ class BoardCreateSerializer(serializers.ModelSerializer):
             "title",
             "owner_id",
             "members",
-            "tasks",
         ]
 
 
@@ -87,16 +87,6 @@ class BoardUpdateResponseSerializer(serializers.ModelSerializer):
             "email": obj.owner.email,
             "fullname": obj.owner.profile.fullname
         }
-
-
-class TaskSerializer(serializers.ModelSerializer):
-    board = serializers.PrimaryKeyRelatedField(
-        queryset=Board.objects.all()
-    )
-
-    class Meta:
-        model = Task
-        fields = ["id", "title", "board"]
 
 
 class TaskDetailSerializer(serializers.ModelSerializer):
