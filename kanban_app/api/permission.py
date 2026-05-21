@@ -21,3 +21,13 @@ class IsOwnerOrReadOnly(permissions.BasePermission):
                 return True
 
             raise PermissionDenied({"detail": "Verboten. Der Benutzer muss der Eigentümer des Boards sein, um es zu löschen."})
+        
+    
+class IsTaskOwnerOrBoardOwner(permissions.BasePermission):
+
+    def has_object_permission(self, request, view, obj):
+        if request.method == "DELETE":
+            if obj.owner_id == request.user.id or obj.board.owner_id == request.user.id:
+                return True
+
+            raise PermissionDenied({"detail": "Verboten. Nur der Ersteller der Task oder der Board-Eigentümer kann die Task löschen."})

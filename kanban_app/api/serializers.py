@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from kanban_app.models import Board, Task
+from kanban_app.models import Board, Task, Comment
 from auth_app.models import User, UserProfile
 
 class UserShortProfileSerializer(serializers.ModelSerializer):
@@ -12,13 +12,26 @@ class UserShortProfileSerializer(serializers.ModelSerializer):
 
 
 class TaskSerializer(serializers.ModelSerializer):
-    board = serializers.PrimaryKeyRelatedField(
-        queryset=Board.objects.all()
-    )
+    assignee_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), source="assignee", write_only=True, required=False, allow_null=True)
+    reviewer_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), source="reviewer", write_only=True, required=False, allow_null=True)
+    assignee = UserShortProfileSerializer(source="assignee.profile", read_only=True)
+    reviewer = UserShortProfileSerializer(source="reviewer.profile", read_only=True)
+    comments_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
-        fields = ["id", "title", "board"]
+        fields = ["id", "board", "title", "description", "status", "priority", "assignee_id", "reviewer_id", "assignee", "reviewer", "due_date", "comments_count"]
+
+    def get_comments_count(self, obj):
+        return obj.comments.count()
+    
+    def __init__(self, *args, **kwargs):
+        exclude_fields = kwargs.pop("exclude_fields", [])
+
+        super().__init__(*args, **kwargs)
+
+        for field in exclude_fields:
+            self.fields.pop(field)
 
 
 class BoardsSerializer(serializers.ModelSerializer):
@@ -46,31 +59,20 @@ class BoardsSerializer(serializers.ModelSerializer):
     
 
 class BoardDetailSerializer(serializers.ModelSerializer):
-    tasks = TaskSerializer(many=True, read_only=True)
+    tasks = TaskSerializer(many=True, read_only=True, exclude_fields=["board"])
     members = serializers.PrimaryKeyRelatedField(many=True, queryset=User.objects.all(), required=False)
 
     class Meta:
         model = Board
-        fields = [
-            "id",
-            "title",
-            "owner_id",
-            "members",
-            "tasks",
-        ]
+        fields = ["id", "title", "owner_id", "members", "tasks"]
         read_only_fields = ["id", "owner_id", "tasks"]
 
 
-class BoardCreateSerializer(serializers.ModelSerializer):
-    members = serializers.PrimaryKeyRelatedField(queryset=UserProfile.objects.all(), many=True, source="member", write_only=True)
-    class Meta:
-        model = Board
-        fields = [
-            "id",
-            "title",
-            "owner_id",
-            "members",
-        ]
+# class BoardCreateSerializer(serializers.ModelSerializer):
+#     members = serializers.PrimaryKeyRelatedField(queryset=UserProfile.objects.all(), many=True, source="member", write_only=True)
+#     class Meta:
+#         model = Board
+#         fields = ["id", "title", "owner_id", "members"]
 
 
 class BoardUpdateResponseSerializer(serializers.ModelSerializer):
@@ -87,26 +89,12 @@ class BoardUpdateResponseSerializer(serializers.ModelSerializer):
             "email": obj.owner.email,
             "fullname": obj.owner.profile.fullname
         }
+    
 
-
-class TaskDetailSerializer(serializers.ModelSerializer):
-    assignee = UserShortProfileSerializer(read_only=True)
-    reviewer = UserShortProfileSerializer(read_only=True)
-    comments_count = serializers.SerializerMethodField()
+class CommentsSerializer(serializers.ModelSerializer):
+    author = serializers.CharField(source="author.fullname", read_only=True)
 
     class Meta:
-        model = Task
-        fields = [
-            "id",
-            "title",
-            "description",
-            "status",
-            "priority",
-            "assignee",
-            "reviewer",
-            "due_date",
-            "comments_count",
-        ]
-
-    def get_comments_count(self, obj):
-        return obj.comments.count()
+        model = Comment
+        fields = ["id", "created_at", "author", "content"]
+        read_only_fields = ["id", "created_at", "author"]

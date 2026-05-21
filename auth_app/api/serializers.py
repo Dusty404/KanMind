@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
-from auth_app.models import UserProfile, Task, Board
+from auth_app.models import UserProfile
 
 
 class RegistrationSerializer(serializers.ModelSerializer):

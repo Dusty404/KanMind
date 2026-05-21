@@ -1,9 +1,9 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, generics, mixins, viewsets
-from kanban_app.models import Board, UserProfile, User
-from .serializers import BoardsSerializer, BoardDetailSerializer, BoardUpdateResponseSerializer, UserShortProfileSerializer
-from .permission import IsOwnerOrReadOnly
+from kanban_app.models import Board, UserProfile, User, Task, Comment
+from .serializers import BoardsSerializer, BoardDetailSerializer, BoardUpdateResponseSerializer, UserShortProfileSerializer, TaskSerializer, CommentsSerializer
+from .permission import IsOwnerOrReadOnly, IsTaskOwnerOrBoardOwner
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
@@ -31,6 +31,7 @@ class BoardViewSet(viewsets.ViewSet):
     
     def create(self, request):
         serializer = BoardsSerializer(data=request.data)
+        
         if serializer.is_valid():
             member_ids = request.data.get("members", [])
             profiles = UserProfile.objects.filter(user_id__in=member_ids)
@@ -44,9 +45,7 @@ class BoardViewSet(viewsets.ViewSet):
             data = response_serializer.data
             data["detail"] = "Das Board wurde erfolgreich erstellt"
             return Response(data, status=status.HTTP_201_CREATED)
-        return Response({
-            "detail": "Ungültige Anfragedaten."
-        }, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "Ungültige Anfragedaten."}, status=status.HTTP_400_BAD_REQUEST)
     
     def partial_update(self, request, pk=None):
         board = get_object_or_404(Board, pk=pk)
@@ -79,11 +78,115 @@ class BoardViewSet(viewsets.ViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
     
 
-class TasksViewSet(viewsets.ViewSet):
-    pass
+class TasksViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, IsTaskOwnerOrBoardOwner]
+    serializer_class = TaskSerializer
+
+    def get_queryset(self):
+        return Task.objects.filter(
+            board__member__user=self.request.user
+        ).distinct()
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
+
+    def partial_update(self, request, *args, **kwargs):
+        if "board" in request.data or "board_id" in request.data:
+            return Response(
+                {"detail": "Das Board eines Tasks kann nicht geändert werden."}, status=status.HTTP_400_BAD_REQUEST)
+
+        task = self.get_object()
+        serializer = TaskSerializer(task, data=request.data, partial=True, exclude_fields=['board', 'comments_count'])
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def destroy(self, request, pk=None):
+        try:
+            task = Task.objects.get(pk=pk)
+        except Task.DoesNotExist:
+            return Response({"detail": "Task nicht gefunden. Die angegebene Task-ID existiert nicht."}, status=status.HTTP_404_NOT_FOUND)
+
+        self.check_object_permissions(request, task)
+        task.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class TasksAssignedToUserView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TaskSerializer
+
+    def get_queryset(self):
+        return Task.objects.filter(assignee=self.request.user)
+    
+
+class ReviewingView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TaskSerializer
+
+    def get_queryset(self):
+        return Task.objects.filter(reviewer=self.request.user)    
+
+
+class CommentsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_task(self, task_id, request):
+        try:
+            task = Task.objects.get(pk=task_id)
+        except Task.DoesNotExist:
+            return None, Response({"detail": "Task nicht gefunden. Die angegebene Task-ID existiert nicht."}, status=status.HTTP_404_NOT_FOUND)
+
+        is_member = task.board.member.filter(user=request.user).exists()
+        is_owner = task.board.owner_id == request.user.id
+
+        if not is_member and not is_owner:
+            return None, Response({"detail": "Verboten. Der Benutzer muss Mitglied des Boards sein, zu dem die Task gehört."}, status=status.HTTP_403_FORBIDDEN)
+        return task, None
+
+    def get(self, request, task_id):
+        task, error_response = self.get_task(task_id, request)
+        if error_response:
+            return error_response
+
+        comments = task.comments.all().order_by("created_at")
+        serializer = CommentsSerializer(comments, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request, task_id):
+        task, error_response = self.get_task(task_id, request)
+        if error_response:
+            return error_response
+
+        serializer = CommentsSerializer(data=request.data)
+
+        if serializer.is_valid():
+            comment = serializer.save(task=task, author=request.user.profile)
+            response_serializer = CommentsSerializer(comment)
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, task_id, comment_id):
+        task, error_response = self.get_task(task_id, request)
+        if error_response:
+            return error_response
+
+        try:
+            comment = task.comments.get(pk=comment_id)
+        except Comment.DoesNotExist:
+            return Response({"detail": "Kommentar oder Task nicht gefunden."}, status=status.HTTP_404_NOT_FOUND)
+
+        if comment.author.user_id != request.user.id:
+            return Response({"detail": "Verboten. Nur der Ersteller des Kommentars darf ihn löschen."}, status=status.HTTP_403_FORBIDDEN)
+        comment.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
     
 
 class EmailCheckView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request, email):
         try:
             user = User.objects.get(email=email)
