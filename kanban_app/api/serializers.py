@@ -14,8 +14,8 @@ class UserShortProfileSerializer(serializers.ModelSerializer):
 class TaskSerializer(serializers.ModelSerializer):
     assignee_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), source="assignee", write_only=True, required=False, allow_null=True)
     reviewer_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), source="reviewer", write_only=True, required=False, allow_null=True)
-    assignee = UserShortProfileSerializer(source="assignee.profile", read_only=True)
-    reviewer = UserShortProfileSerializer(source="reviewer.profile", read_only=True)
+    assignee = UserShortProfileSerializer(source="assignee.profile", read_only=True, required=False, allow_null=True)
+    reviewer = UserShortProfileSerializer(source="reviewer.profile", read_only=True, required=False, allow_null=True)
     comments_count = serializers.SerializerMethodField()
 
     class Meta:
@@ -66,13 +66,6 @@ class BoardDetailSerializer(serializers.ModelSerializer):
         model = Board
         fields = ["id", "title", "owner_id", "members", "tasks"]
         read_only_fields = ["id", "owner_id", "tasks"]
-
-
-# class BoardCreateSerializer(serializers.ModelSerializer):
-#     members = serializers.PrimaryKeyRelatedField(queryset=UserProfile.objects.all(), many=True, source="member", write_only=True)
-#     class Meta:
-#         model = Board
-#         fields = ["id", "title", "owner_id", "members"]
 
 
 class BoardUpdateResponseSerializer(serializers.ModelSerializer):

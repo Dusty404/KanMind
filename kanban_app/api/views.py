@@ -7,6 +7,8 @@ from .permission import IsOwnerOrReadOnly, IsTaskOwnerOrBoardOwner
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
+from django.http import Http404
+from rest_framework.exceptions import PermissionDenied, NotFound, ValidationError
 
 
 class BoardViewSet(viewsets.ViewSet):
@@ -14,10 +16,13 @@ class BoardViewSet(viewsets.ViewSet):
     serializer_class = BoardsSerializer
 
     def get_queryset(self):
-        return Board.objects.filter(
-        Q(owner_id=self.request.user.id) |
-        Q(member__user=self.request.user)
-    ).distinct()
+        try:
+            return Board.objects.filter(
+            Q(owner_id=self.request.user.id) |
+            Q(member__user=self.request.user)
+            ).distinct()
+        except Board.DoesNotExist:
+            return None, Response({"detail": "Board nicht gefunden. Die angegebene Task-ID existiert nicht."}, status=status.HTTP_404_NOT_FOUND) 
 
     def list(self, request):
         boards = self.get_queryset()
@@ -25,7 +30,12 @@ class BoardViewSet(viewsets.ViewSet):
         return Response(serializer.data)
 
     def retrieve(self, request, pk=None):
-        board = get_object_or_404(self.get_queryset(), pk=pk)
+        try:
+            board = Board.objects.get(pk=pk)
+        except Board.DoesNotExist:
+            return Response(
+                {"detail": "Board nicht gefunden. Die angegebene Board-ID existiert nicht."}, status=status.HTTP_404_NOT_FOUND)
+        self.check_object_permissions(request, board)
         serializer = BoardDetailSerializer(board)
         return Response(serializer.data)
     
@@ -36,36 +46,36 @@ class BoardViewSet(viewsets.ViewSet):
             member_ids = request.data.get("members", [])
             profiles = UserProfile.objects.filter(user_id__in=member_ids)
             if profiles.count() != len(member_ids):
-                return Response({
-                    "detail": "Ungültige Anfragedaten. Möglicherweise sind einige Benutzer-IDs ungültig."
-                }, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"detail": "Ungültige Anfragedaten. Möglicherweise sind einige Benutzer-Email-Adressen ungültig."}, status=status.HTTP_400_BAD_REQUEST)
             board = serializer.save(owner=request.user)
             board.member.set(profiles)
             response_serializer = BoardsSerializer(board)
             data = response_serializer.data
             data["detail"] = "Das Board wurde erfolgreich erstellt"
             return Response(data, status=status.HTTP_201_CREATED)
-        return Response({"detail": "Ungültige Anfragedaten."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "Ungültige Anfragedaten. Möglicherweise sind einige Benutzer-Email-Adressen ungültig."}, status=status.HTTP_400_BAD_REQUEST)
     
     def partial_update(self, request, pk=None):
-        board = get_object_or_404(Board, pk=pk)
-        self.check_object_permissions(request, board)
+        try:
+            board = Board.objects.get(pk=pk)
+        except Board.DoesNotExist:
+            return Response(
+                {"detail": "Board nicht gefunden. Die angegebene Board-ID existiert nicht."}, status=status.HTTP_404_NOT_FOUND)
         serializer = BoardDetailSerializer(board, data=request.data, partial=True)
 
         if serializer.is_valid():
+            self.check_object_permissions(request, board)
             member_ids = request.data.get("members", None)
             if member_ids is not None:
                 profiles = UserProfile.objects.filter(user_id__in=member_ids)
             if profiles.count() != len(member_ids):
-                return Response({
-                    "detail": "Ungültige Anfragedaten. Möglicherweise sind einige Benutzer-IDs ungültig."
-                }, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"detail": "Ungültige Anfragedaten. Möglicherweise sind einige Benutzer-Email-Adressen ungültig."}, status=status.HTTP_400_BAD_REQUEST)
             board = serializer.save()
             if member_ids is not None:
                 board.member.set(profiles)
             response_serializer = BoardUpdateResponseSerializer(board)
             return Response(response_serializer.data, status=status.HTTP_200_OK)
-        return Response({"detail": "Ungültige Anfragedaten."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "Ungültige Anfragedaten. Möglicherweise sind einige Benutzer-Email-Adressen ungültig."}, status=status.HTTP_400_BAD_REQUEST)
     
     def destroy(self, request, pk=None):
         try:
@@ -83,29 +93,61 @@ class TasksViewSet(viewsets.ModelViewSet):
     serializer_class = TaskSerializer
 
     def get_queryset(self):
-        return Task.objects.filter(
-            board__member__user=self.request.user
-        ).distinct()
+        return Task.objects.all()
+    
+    def get_object(self):
+        pk = self.kwargs.get("pk")
 
-    def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
+        if not str(pk).isdigit():
+            raise ValidationError({"detail": "Ungültige Anfragedaten. Die übermittelte Task-ID ist fehlerhaft."})
+        try:
+            return super().get_object()
+        except Http404:
+            raise NotFound({"detail": "Task nicht gefunden. Die angegebene Task-ID existiert nicht."})
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+
+        if not serializer.is_valid():
+            if "board" in serializer.errors:
+                return Response({"detail": "Board nicht gefunden. Die angegebene Board-ID existiert nicht."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"detail": "Ungültige Anfragedaten. Möglicherweise fehlen erforderliche Felder oder enthalten ungültige Werte."}, status=status.HTTP_400_BAD_REQUEST)
+
+        board = serializer.validated_data.get("board")
+
+        if not (board.owner_id == request.user.id or board.member.filter(user=request.user).exists()):
+            raise PermissionDenied({"detail": "Verboten. Der Benutzer muss Mitglied des Boards sein, um eine Task zu erstellen."})
+
+        task = serializer.save(owner=self.request.user)
+        profiles_to_add = []
+
+        if task.assignee:
+            profiles_to_add.append(task.assignee.profile)
+        if task.reviewer:
+            profiles_to_add.append(task.reviewer.profile)
+        if profiles_to_add:
+            task.board.member.add(*profiles_to_add)
+
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def partial_update(self, request, *args, **kwargs):
         if "board" in request.data or "board_id" in request.data:
-            return Response(
-                {"detail": "Das Board eines Tasks kann nicht geändert werden."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "Das Board eines Tasks kann nicht geändert werden."}, status=status.HTTP_400_BAD_REQUEST)
 
         task = self.get_object()
         serializer = TaskSerializer(task, data=request.data, partial=True, exclude_fields=['board', 'comments_count'])
 
-        if serializer.is_valid():
+        if not serializer.is_valid():
+            return Response({"detail": "Ungültige Anfragedaten. Möglicherweise fehlen erforderliche Felder oder enthalten ungültige Werte."}, status=status.HTTP_400_BAD_REQUEST)
+        elif serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def destroy(self, request, pk=None):
         try:
-            task = Task.objects.get(pk=pk)
+            task = self.get_object()
         except Task.DoesNotExist:
             return Response({"detail": "Task nicht gefunden. Die angegebene Task-ID existiert nicht."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -134,19 +176,26 @@ class CommentsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get_task(self, task_id, request):
+
         try:
             task = Task.objects.get(pk=task_id)
         except Task.DoesNotExist:
-            return None, Response({"detail": "Task nicht gefunden. Die angegebene Task-ID existiert nicht."}, status=status.HTTP_404_NOT_FOUND)
-
+            return None, Response({"detail": "Task nicht gefunden. Die angegebene Task-ID existiert nicht."}, status=status.HTTP_404_NOT_FOUND) 
+        
         is_member = task.board.member.filter(user=request.user).exists()
         is_owner = task.board.owner_id == request.user.id
+
+        try:
+            task = Task.objects.get(pk=task_id)
+        except Task.DoesNotExist:
+            return None, Response({"detail": "Task nicht gefunden. Die angegebene Task-ID existiert nicht."}, status=status.HTTP_404_NOT_FOUND)        
 
         if not is_member and not is_owner:
             return None, Response({"detail": "Verboten. Der Benutzer muss Mitglied des Boards sein, zu dem die Task gehört."}, status=status.HTTP_403_FORBIDDEN)
         return task, None
 
     def get(self, request, task_id):
+
         task, error_response = self.get_task(task_id, request)
         if error_response:
             return error_response
@@ -156,12 +205,14 @@ class CommentsView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request, task_id):
+
         task, error_response = self.get_task(task_id, request)
         if error_response:
             return error_response
 
         serializer = CommentsSerializer(data=request.data)
-
+        if not request.data.get("content", "").strip():
+            return Response({"detail": "Ungültige Anfragedaten. Möglicherweise ist der `content`-Wert leer."}, status=status.HTTP_400_BAD_REQUEST)
         if serializer.is_valid():
             comment = serializer.save(task=task, author=request.user.profile)
             response_serializer = CommentsSerializer(comment)
@@ -169,6 +220,7 @@ class CommentsView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, task_id, comment_id):
+
         task, error_response = self.get_task(task_id, request)
         if error_response:
             return error_response
@@ -187,7 +239,10 @@ class CommentsView(APIView):
 class EmailCheckView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, email):
+    def get(self, request, email=None):
+
+        if not email:
+            return Response({"detail": "Ungültige Anfrage. Die E-Mail-Adresse fehlt oder hat ein falsches Format."}, status=status.HTTP_400_BAD_REQUEST)
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
