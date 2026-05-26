@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, generics, mixins, viewsets
 from kanban_app.models import Board, UserProfile, User, Task, Comment
-from .serializers import BoardsSerializer, BoardDetailSerializer, BoardUpdateResponseSerializer, UserShortProfileSerializer, TaskSerializer, CommentsSerializer
+from .serializers import BoardsSerializer, BoardDetailSerializer, BoardUpdateResponseSerializer, UserShortProfileSerializer, TaskSerializer, CommentsSerializer, BoardPatchSerializer
 from .permission import IsOwnerOrReadOnly, IsTaskOwnerOrBoardOwner
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
@@ -61,15 +61,15 @@ class BoardViewSet(viewsets.ViewSet):
         except Board.DoesNotExist:
             return Response(
                 {"detail": "Board nicht gefunden. Die angegebene Board-ID existiert nicht."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = BoardDetailSerializer(board, data=request.data, partial=True)
+        serializer = BoardPatchSerializer(board, data=request.data, partial=True)
 
         if serializer.is_valid():
             self.check_object_permissions(request, board)
             member_ids = request.data.get("members", None)
             if member_ids is not None:
                 profiles = UserProfile.objects.filter(user_id__in=member_ids)
-            if profiles.count() != len(member_ids):
-                return Response({"detail": "Ungültige Anfragedaten. Möglicherweise sind einige Benutzer-Email-Adressen ungültig."}, status=status.HTTP_400_BAD_REQUEST)
+                if profiles.count() != len(member_ids):
+                    return Response({"detail": "Ungültige Anfragedaten. Möglicherweise sind einige Benutzer-Email-Adressen ungültig."}, status=status.HTTP_400_BAD_REQUEST)
             board = serializer.save()
             if member_ids is not None:
                 board.member.set(profiles)
@@ -132,11 +132,9 @@ class TasksViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def partial_update(self, request, *args, **kwargs):
-        if "board" in request.data or "board_id" in request.data:
-            return Response({"detail": "Das Board eines Tasks kann nicht geändert werden."}, status=status.HTTP_400_BAD_REQUEST)
-
+    
         task = self.get_object()
-        serializer = TaskSerializer(task, data=request.data, partial=True, exclude_fields=['board', 'comments_count'])
+        serializer = TaskSerializer(task, data=request.data, partial=True, exclude_fields=['board', 'comments_count', 'assignee', 'reviewer'])
 
         if not serializer.is_valid():
             return Response({"detail": "Ungültige Anfragedaten. Möglicherweise fehlen erforderliche Felder oder enthalten ungültige Werte."}, status=status.HTTP_400_BAD_REQUEST)
@@ -239,13 +237,14 @@ class CommentsView(APIView):
 class EmailCheckView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, email=None):
+    def get(self, request):
+        email = request.query_params.get("email")
 
         if not email:
             return Response({"detail": "Ungültige Anfrage. Die E-Mail-Adresse fehlt oder hat ein falsches Format."}, status=status.HTTP_400_BAD_REQUEST)
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
-            return Response({"detail": "Email nicht gefunden. Die Email exestiert nicht."}, status=status.HTTP_404_NOT_FOUND)
-        response_serializer = UserShortProfileSerializer(user.profile)
-        return Response(response_serializer.data, status=status.HTTP_200_OK)
+            return Response({"detail": "Email nicht gefunden. Die Email existiert nicht."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = UserShortProfileSerializer(user.profile)
+        return Response(serializer.data, status=status.HTTP_200_OK)

@@ -11,7 +11,6 @@ urlpatterns = [
     path('tasks/reviewing/', ReviewingView.as_view()),
     path("tasks/<int:task_id>/comments/", CommentsView.as_view()),
     path("tasks/<int:task_id>/comments/<int:comment_id>/", CommentsView.as_view()),
-    path('-check/', EmailCheckView.as_view()),
-    path('<str:email>-check/', EmailCheckView.as_view()),
+    path('email-check/', EmailCheckView.as_view()),
     path('', include(router.urls)),
 ]

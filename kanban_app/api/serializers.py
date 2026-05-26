@@ -52,7 +52,7 @@ class BoardsSerializer(serializers.ModelSerializer):
         return obj.tasks.count()
 
     def get_tasks_to_do_count(self, obj):
-        return obj.tasks.filter(status="to_do").count()
+        return obj.tasks.filter(status="to-do").count()
 
     def get_tasks_high_prio_count(self, obj):
         return obj.tasks.filter(priority="high").count()
@@ -60,12 +60,23 @@ class BoardsSerializer(serializers.ModelSerializer):
 
 class BoardDetailSerializer(serializers.ModelSerializer):
     tasks = TaskSerializer(many=True, read_only=True, exclude_fields=["board"])
-    members = serializers.PrimaryKeyRelatedField(many=True, queryset=User.objects.all(), required=False)
+    members = UserShortProfileSerializer(source="member", many=True, read_only=True)
 
     class Meta:
         model = Board
         fields = ["id", "title", "owner_id", "members", "tasks"]
         read_only_fields = ["id", "owner_id", "tasks"]
+
+        
+class BoardPatchSerializer(serializers.ModelSerializer):
+    members = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False
+    )
+
+    class Meta:
+        model = Board
+        fields = ["title", "members"]
 
 
 class BoardUpdateResponseSerializer(serializers.ModelSerializer):
