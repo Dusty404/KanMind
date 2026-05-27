@@ -21,7 +21,7 @@ class RegistrationView(APIView):
                 status=status.HTTP_201_CREATED,
             )
         return Response(
-            {"Ungültige Anfragedaten"},
+            {"detail": "Ungültige Anfragedaten."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -48,7 +48,7 @@ class CustomLoginView(ObtainAuthToken):
                 status=status.HTTP_200_OK,
             )
         return Response(
-            {"Ungültige Anfragedaten"},
+            {"detail": "Ungültige Anfragedaten."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 

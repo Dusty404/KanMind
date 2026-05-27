@@ -225,7 +225,7 @@ class TasksViewSet(viewsets.ModelViewSet):
             task,
             data=request.data,
             partial=True,
-            exclude_fields=["board", "comments_count", "assignee", "reviewer"],
+            exclude_fields=["board", "comments_count"],
         )
 
 
