@@ -50,7 +50,7 @@ core/
 ### Clone repository
 
 ```bash
-git clone <your-repository-url>
+git clone https://github.com/Dusty404/KanMind.git
 cd <repository-name>
 ```
 
