@@ -1,6 +1,5 @@
 from django.db.models import Q
 from django.http import Http404
-from django.shortcuts import get_object_or_404
 from rest_framework import generics, status, viewsets
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -30,7 +29,7 @@ class BoardViewSet(viewsets.ViewSet):
             Q(owner_id=self.request.user.id)
             | Q(member__user=self.request.user)
         ).distinct()
-    
+
     def list(self, request):
         boards = self.get_queryset()
         serializer = BoardsSerializer(boards, many=True)
@@ -40,10 +39,11 @@ class BoardViewSet(viewsets.ViewSet):
         board, error_response = self._get_board_or_error(pk)
         if error_response:
             return error_response
+
         self.check_object_permissions(request, board)
         serializer = BoardDetailSerializer(board)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    
+        return Response(serializer.data)
+
     def create(self, request):
         serializer = BoardsSerializer(data=request.data)
         if not serializer.is_valid():
@@ -62,8 +62,8 @@ class BoardViewSet(viewsets.ViewSet):
         board, error_response = self._get_board_or_error(pk)
         if error_response:
             return error_response
-        serializer = BoardPatchSerializer(board, data=request.data, partial=True)
 
+        serializer = BoardPatchSerializer(board, data=request.data, partial=True)
         if not serializer.is_valid():
             return self._invalid_board_data_response()
 
@@ -73,13 +73,14 @@ class BoardViewSet(viewsets.ViewSet):
         board, error_response = self._get_board_or_error(pk)
         if error_response:
             return error_response
+
         self.check_object_permissions(request, board)
         board.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     def _get_board_or_error(self, pk):
         try:
-            return self.get_queryset().get(pk=pk), None
+            return Board.objects.get(pk=pk), None
         except Board.DoesNotExist:
             return None, Response(
                 {"detail": "Board nicht gefunden. Die angegebene Board-ID existiert nicht."},
@@ -129,19 +130,13 @@ class BoardViewSet(viewsets.ViewSet):
 class TasksViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, TaskPermission]
     serializer_class = TaskSerializer
-
-    def get_queryset(self):
-        return Task.objects.filter(
-            Q(owner_id=self.request.user.id)
-            | Q(board__owner_id=self.request.user.id)
-            | Q(board__member__user=self.request.user)
-        ).distinct()
+    queryset = Task.objects.all()
 
     def get_object(self):
         self._validate_task_pk()
         try:
-            return self.get_queryset().get(pk=self.kwargs.get("pk"))
-        except Task.DoesNotExist:
+            return super().get_object()
+        except Http404:
             raise NotFound({
                 "detail": "Task nicht gefunden. Die angegebene Task-ID existiert nicht."
             })
@@ -253,30 +248,21 @@ class ReviewingView(generics.ListAPIView):
 class CommentsView(APIView):
     permission_classes = [IsAuthenticated, CommentPermission]
 
-    def get_task_queryset(self):
-        return Task.objects.filter(
-            Q(owner_id=self.request.user.id)
-            | Q(board__owner_id=self.request.user.id)
-            | Q(board__member__user=self.request.user)
-        ).distinct()
-
-    def _get_task_or_error(self):
-        self._validate_task_pk()
-        task_id = self.kwargs.get("task_id")
-
+    def get_task(self, task_id, request):
         try:
-            return self.get_task_queryset().get(pk=task_id)
+            task = Task.objects.get(id=task_id)
         except Task.DoesNotExist:
-            if self.request.method == "DELETE":
-                raise NotFound({
-                    "detail": "Kommentar oder Task nicht gefunden."
-                })
-            raise NotFound({
-                "detail": "Task nicht gefunden. Die angegebene Task-ID existiert nicht."
-            })
+            return None, self._task_not_found_response()
 
-    def get(self, request, task_id, comment_id=None):
+    def check_task_permission(self, task, request):        
+        if self._can_access_task(request, task):
+                return task, None
+
+        return None, self._task_access_forbidden_response()
+
+    def get(self, request, task_id):
         task = self._get_task_or_error()
+        self.check_object_permissions(request, task)
 
         comments = task.comments.all().order_by("-created_at")
         serializer = CommentsSerializer(comments, many=True)
@@ -289,6 +275,7 @@ class CommentsView(APIView):
             return self._empty_content_response()
 
         self.check_object_permissions(request, task)
+
         serializer = CommentsSerializer(data=request.data)
         if serializer.is_valid():
             return self._create_comment_response(serializer, task, request)
@@ -297,12 +284,10 @@ class CommentsView(APIView):
 
     def delete(self, request, task_id, comment_id):
         task = self._get_task_or_error()
-
-        comment, error_response = self._get_comment_or_error(task, comment_id)
-        if error_response:
-            return error_response
+        comment = self._get_comment_or_error(task, comment_id)
 
         self.check_object_permissions(request, comment)
+
         comment.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -312,33 +297,57 @@ class CommentsView(APIView):
             or task.board.owner_id == request.user.id
             or task.board.member.filter(user=request.user).exists()
         )
-    
-    def _validate_task_pk(self):
-        pk = self.kwargs.get("task_id")
-        if not str(pk).isdigit():
-            raise ValidationError({
-                "detail": "Ungültige Anfragedaten. Die übermittelte Task-ID ist fehlerhaft."
-            })
-        
-    def _get_comment_or_error(self, task, comment_id):
-        try:
-            return task.comments.get(pk=comment_id), None
-        except Comment.DoesNotExist:
-            return None, Response(
-                {"detail": "Kommentar oder Task nicht gefunden."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+
+    def _task_not_found_response(self):
+        return Response(
+            {"detail": "Task nicht gefunden. Die angegebene Task-ID existiert nicht."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    def _task_access_forbidden_response(self):
+        return Response(
+            {"detail": "Verboten. Der Benutzer muss Mitglied des Boards sein, zu dem die Task gehört."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    def _empty_content_response(self):
+        return Response(
+            {"detail": "Ungültige Anfragedaten. Möglicherweise ist der `content`-Wert leer."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     def _create_comment_response(self, serializer, task, request):
         comment = serializer.save(task=task, owner=request.user)
         response_serializer = CommentsSerializer(comment)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
     
-    def _empty_content_response(self):
-        return Response(
-            {"detail": "Ungültige Anfragedaten. Möglicherweise ist der `content`-Wert leer."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    def _get_task_or_error(self):
+        self._validate_task_pk()
+        task_id = self.kwargs.get("task_id")
+
+        try:
+            return Task.objects.get(pk=task_id)
+        except Task.DoesNotExist:
+            raise NotFound({
+                "detail": "Task nicht gefunden. Die angegebene Task-ID existiert nicht."
+            })
+
+    def _get_comment_or_error(self, task, comment_id):
+        try:
+            return task.comments.get(pk=comment_id)
+        except Comment.DoesNotExist:
+            raise NotFound({
+            "detail": "Kommentar oder Task nicht gefunden."
+        })
+                
+        
+    def _validate_task_pk(self):
+        task_id = self.kwargs.get("task_id")
+
+        if not str(task_id).isdigit():
+            raise ValidationError({
+                "detail": "Ungültige Anfragedaten. Die übermittelte Task-ID ist fehlerhaft."
+            })
 
 
 class EmailCheckView(APIView):
