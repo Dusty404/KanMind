@@ -33,3 +33,4 @@ ENV/
 # Migrations (optional, je nach Workflow)
 **/migrations/*.pyc
 **/migrations/__pycache__/
+db.sqlite3
