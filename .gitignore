@@ -34,3 +34,5 @@ ENV/
 **/migrations/*.pyc
 **/migrations/__pycache__/
 db.sqlite3
+auth_app/migrations/0001_initial.py
+kanban_app/migrations/0001_initial.py
