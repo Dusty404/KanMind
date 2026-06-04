@@ -61,4 +61,58 @@ class TaskSerializer(serializers.ModelSerializer):
 
     def _remove_excluded_fields(self, exclude_fields):
         for field in exclude_fields:
-            self.fields.pop(field)
+            self.fields.pop(field, None)
+
+    def validate(self, attrs):
+        board = attrs.get("board")
+
+        if board and not self._can_create_task(board):
+            raise serializers.ValidationError({
+                "permission": "Der Benutzer darf auf diesem Board keine Task erstellen."
+            })
+
+        return attrs
+
+    def create(self, validated_data):
+        request = self.context["request"]
+        task = Task.objects.create(owner=request.user, **validated_data)
+        self._add_profiles_to_board(task)
+        return task
+
+    def _can_create_task(self, board):
+        request = self.context["request"]
+
+        return (
+            board.owner_id == request.user.id
+            or board.member.filter(user=request.user).exists()
+        )
+
+    def _add_profiles_to_board(self, task):
+        profiles = []
+
+        if task.assignee:
+            profiles.append(task.assignee.profile)
+
+        if task.reviewer:
+            profiles.append(task.reviewer.profile)
+
+        if profiles:
+            task.board.member.add(*profiles)
+
+class TaskPatchSerializer(TaskSerializer):
+    class Meta(TaskSerializer.Meta):
+        fields = [
+            "id",
+            "title",
+            "description",
+            "status",
+            "priority",
+            "assignee_id",
+            "reviewer_id",
+            "assignee",
+            "reviewer",
+            "due_date",
+        ]
+
+    def validate(self, attrs):
+        return attrs

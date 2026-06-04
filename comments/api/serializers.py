@@ -9,3 +9,12 @@ class CommentsSerializer(serializers.ModelSerializer):
         model = Comment
         fields = ["id", "created_at", "author", "content"]
         read_only_fields = ["id", "created_at", "author"]
+
+    def create(self, validated_data):
+        request = self.context["request"]
+
+        return Comment.objects.create(
+            owner=request.user,
+            task=self.context["task"],
+            **validated_data
+        )

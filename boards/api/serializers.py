@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from ..models import Board
 from auth_app.api.serializers import UserShortProfileSerializer
+from auth_app.models import UserProfile
 from tasks.api.serializers import TaskSerializer
 
 
@@ -34,6 +35,38 @@ class BoardsSerializer(serializers.ModelSerializer):
 
     def get_tasks_high_prio_count(self, obj):
         return obj.tasks.filter(priority="high").count()
+    
+
+class BoardCreateSerializer(serializers.ModelSerializer):
+    members = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        write_only=True,
+    )
+
+    class Meta:
+        model = Board
+        fields = ["id", "title", "members", "owner_id"]
+        read_only_fields = ["id", "owner_id"]
+
+    def validate_members(self, member_ids):
+        profiles = UserProfile.objects.filter(user_id__in=member_ids)
+
+        if profiles.count() != len(member_ids):
+            raise serializers.ValidationError(
+                "Ungültige Anfragedaten. Möglicherweise sind einige Benutzer-Email-Adressen ungültig."
+            )
+
+        return profiles
+
+    def create(self, validated_data):
+        profiles = validated_data.pop("members", [])
+        owner = self.context["request"].user
+
+        board = Board.objects.create(owner=owner, **validated_data)
+        board.member.set(profiles)
+
+        return board
 
 
 class BoardDetailSerializer(serializers.ModelSerializer):
@@ -55,6 +88,26 @@ class BoardPatchSerializer(serializers.ModelSerializer):
     class Meta:
         model = Board
         fields = ["title", "members"]
+
+    def validate_members(self, member_ids):
+        profiles = UserProfile.objects.filter(user_id__in=member_ids)
+
+        if profiles.count() != len(member_ids):
+            raise serializers.ValidationError(
+                "Ungültige Anfragedaten. Möglicherweise sind einige Benutzer-Email-Adressen ungültig."
+            )
+
+        return profiles
+
+    def update(self, instance, validated_data):
+        profiles = validated_data.pop("members", None)
+
+        instance = super().update(instance, validated_data)
+
+        if profiles is not None:
+            instance.member.set(profiles)
+
+        return instance
 
 
 class BoardUpdateResponseSerializer(serializers.ModelSerializer):

@@ -1,6 +1,8 @@
 from django.db.models import Q
+from django.http import Http404
 from rest_framework import status, viewsets
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -10,69 +12,63 @@ from .permission import BoardPermission
 from ..models import Board
 from .serializers import (
     BoardDetailSerializer,
+    BoardCreateSerializer,
     BoardPatchSerializer,
     BoardsSerializer,
-    BoardUpdateResponseSerializer,
+    BoardUpdateResponseSerializer
 )
 
 
-class BoardViewSet(viewsets.ViewSet):
+class BoardViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, BoardPermission]
     serializer_class = BoardsSerializer
 
     def get_queryset(self):
-        return Board.objects.filter(
-            Q(owner_id=self.request.user.id)
-            | Q(member__user=self.request.user)
-        ).distinct()
+        if self.action == "list":
+            return Board.objects.filter(
+                Q(owner_id=self.request.user.id)
+                | Q(member__user=self.request.user)
+            ).distinct()
+        
+        return Board.objects.all()
+    
+    def get_object(self):
+        try:
+            return super().get_object()
+        except Http404:
+            raise NotFound({
+                "detail": "Board nicht gefunden. Die angegebene Board-ID existiert nicht."
+            })
 
-    def list(self, request):
-        boards = self.get_queryset()
-        serializer = BoardsSerializer(boards, many=True)
-        return Response(serializer.data)
+    def get_serializer_class(self):
+        if self.action == "create":
+            return BoardCreateSerializer
 
-    def retrieve(self, request, pk=None):
-        board, error_response = self._get_board_or_error(pk)
-        if error_response:
-            return error_response
+        if self.action == "retrieve":
+            return BoardDetailSerializer
 
-        self.check_object_permissions(request, board)
-        serializer = BoardDetailSerializer(board)
-        return Response(serializer.data)
+        if self.action == "partial_update":
+            return BoardPatchSerializer
+
+        return BoardsSerializer
 
     def create(self, request):
-        serializer = BoardsSerializer(data=request.data)
+        serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
             return self._invalid_board_data_response()
 
-        member_ids = request.data.get("members", [])
-        profiles, error_response = self._get_profiles_or_error(member_ids)
-        if error_response:
-            return error_response
-
-        board = serializer.save(owner=request.user)
-        board.member.set(profiles)
+        board = serializer.save()
         return self._board_created_response(board)
 
-    def partial_update(self, request, pk=None):
-        board, error_response = self._get_board_or_error(pk)
-        if error_response:
-            return error_response
-
-        serializer = BoardPatchSerializer(board, data=request.data, partial=True)
+    def partial_update(self, request, *args, **kwargs):
+        board = self.get_object()
+        serializer = self.get_serializer(board, data=request.data, partial=True)
         if not serializer.is_valid():
             return self._invalid_board_data_response()
 
-        return self._update_board(request, board, serializer)
-
-    def destroy(self, request, pk=None):
-        board, error_response = self._get_board_or_error(pk)
-        if error_response:
-            return error_response
-
-        self.check_object_permissions(request, board)
-        board.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        board = serializer.save()
+        response_serializer = BoardUpdateResponseSerializer(board)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
 
     def _get_board_or_error(self, pk):
         try:
@@ -83,12 +79,19 @@ class BoardViewSet(viewsets.ViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-    def _get_profiles_or_error(self, member_ids):
+    def _get_profiles(self, member_ids):
         profiles = UserProfile.objects.filter(user_id__in=member_ids)
-        if profiles.count() == len(member_ids):
-            return profiles, None
+        if profiles.count() != len(member_ids):
+            raise ValueError
 
-        return None, self._invalid_board_data_response()
+        return profiles
+    
+    def _update_members(self, board, member_ids):
+        if member_ids is None:
+            return
+
+        profiles = self._get_profiles(member_ids)
+        board.member.set(profiles)
 
     def _invalid_board_data_response(self):
         return Response(
@@ -97,30 +100,10 @@ class BoardViewSet(viewsets.ViewSet):
         )
 
     def _board_created_response(self, board):
-        response_serializer = BoardsSerializer(board)
-        data = response_serializer.data
+        serializer = BoardsSerializer(board)
+        data = serializer.data
         data["detail"] = "Das Board wurde erfolgreich erstellt"
         return Response(data, status=status.HTTP_201_CREATED)
-
-    def _update_board(self, request, board, serializer):
-        self.check_object_permissions(request, board)
-        member_ids = request.data.get("members", None)
-        profiles, error_response = self._get_update_profiles(member_ids)
-        if error_response:
-            return error_response
-
-        board = serializer.save()
-        if member_ids is not None:
-            board.member.set(profiles)
-
-        response_serializer = BoardUpdateResponseSerializer(board)
-        return Response(response_serializer.data, status=status.HTTP_200_OK)
-
-    def _get_update_profiles(self, member_ids):
-        if member_ids is None:
-            return None, None
-
-        return self._get_profiles_or_error(member_ids)
     
 class EmailCheckView(APIView):
     permission_classes = [IsAuthenticated]
