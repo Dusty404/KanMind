@@ -2,7 +2,6 @@ from django.urls import include, path
 from rest_framework import routers
 
 from .views import (
-    BoardViewSet,
     CommentsView,
     EmailCheckView,
     ReviewingView,
@@ -12,7 +11,6 @@ from .views import (
 
 
 router = routers.SimpleRouter()
-router.register(r"boards", BoardViewSet, basename="boards")
 router.register(r"tasks", TasksViewSet, basename="tasks")
 
 urlpatterns = [

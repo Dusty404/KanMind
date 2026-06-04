@@ -77,3 +77,11 @@ class CustomLoginSerializer(serializers.Serializer):
         if not user:
             raise serializers.ValidationError("Ungültige Anfragedaten.")
         return user
+
+class UserShortProfileSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(source="user.id", read_only=True)
+    email = serializers.EmailField(source="user.email")
+
+    class Meta:
+        model = UserProfile
+        fields = ["id", "email", "fullname"]
