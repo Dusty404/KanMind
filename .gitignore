@@ -38,3 +38,5 @@ auth_app/migrations/0001_initial.py
 kanban_app/migrations/0001_initial.py
 tasks/migrations/0001_initial.py
 boards/migrations/0001_initial.py
+kanban_app/migrations/0002_delete_comment.py
+comments/migrations/0001_initial.py

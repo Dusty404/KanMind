@@ -8,4 +8,5 @@ urlpatterns = [
     path('api/', include('kanban_app.api.urls')),
     path('api/', include('boards.api.urls')),
     path('api/', include('tasks.api.urls')),
+    path('api/', include('comments.api.urls')),
 ]
