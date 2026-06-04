@@ -23,7 +23,9 @@ class CommentsView(APIView):
     def post(self, request, task_id):
         task = self._get_task_or_error()
         self.check_object_permissions(request, task)
-        serializer = CommentsSerializer(data=request.data, context={"request": request, "task": task})        
+        if not request.data.get("content", "").strip():
+            return self._empty_content_response()
+        serializer = CommentsSerializer(data=request.data)        
         serializer.is_valid(raise_exception=True)
         comment = serializer.save(task=task, owner=request.user)
         return Response(CommentsSerializer(comment).data, status=status.HTTP_201_CREATED)
@@ -40,11 +42,6 @@ class CommentsView(APIView):
             {"detail": "Ungültige Anfragedaten. Möglicherweise ist der `content`-Wert leer."},
             status=status.HTTP_400_BAD_REQUEST,
         )
-
-    def _create_comment_response(self, serializer, task, request):
-        comment = serializer.save(task=task, owner=request.user)
-        response_serializer = CommentsSerializer(comment)
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
     
     def _get_task_or_error(self):
         self._validate_task_pk()
@@ -64,7 +61,6 @@ class CommentsView(APIView):
             "detail": "Kommentar oder Task nicht gefunden."
         })
                 
-        
     def _validate_task_pk(self):
         if not str(self.kwargs["task_id"]).isdigit():
             raise ValidationError({
