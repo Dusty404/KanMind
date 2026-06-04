@@ -1,7 +1,7 @@
 from rest_framework import serializers
-from kanban_app.models import Board
+from ..models import Board
 from auth_app.api.serializers import UserShortProfileSerializer
-from kanban_app.api.serializers import TaskSerializer
+from tasks.api.serializers import TaskSerializer
 
 
 class BoardsSerializer(serializers.ModelSerializer):

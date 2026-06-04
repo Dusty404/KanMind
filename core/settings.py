@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'auth_app',
     'kanban_app',
     'boards',
+    'tasks',
     'corsheaders',
 ]
 

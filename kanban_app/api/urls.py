@@ -1,23 +1,13 @@
-from django.urls import include, path
-from rest_framework import routers
+from django.urls import path
+
 
 from .views import (
     CommentsView,
     EmailCheckView,
-    ReviewingView,
-    TasksAssignedToUserView,
-    TasksViewSet,
 )
 
-
-router = routers.SimpleRouter()
-router.register(r"tasks", TasksViewSet, basename="tasks")
-
 urlpatterns = [
-    path("tasks/assigned-to-me/", TasksAssignedToUserView.as_view()),
-    path("tasks/reviewing/", ReviewingView.as_view()),
     path("tasks/<int:task_id>/comments/", CommentsView.as_view()),
     path("tasks/<int:task_id>/comments/<int:comment_id>/", CommentsView.as_view()),
-    path("email-check/", EmailCheckView.as_view()),
-    path("", include(router.urls)),
+    path("email-check/", EmailCheckView.as_view())
 ]
