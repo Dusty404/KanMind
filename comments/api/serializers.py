@@ -3,11 +3,6 @@ from ..models import Comment
 
 
 class CommentsSerializer(serializers.ModelSerializer):
-    """
-    Serializer für Kommentare.
-
-    Stellt die Informationen eines Kommentars für die API bereit, einschließlich Erstellungszeitpunkt, Autor und Inhalt.
-    """
     author = serializers.CharField(source="owner.profile.fullname", read_only=True)
 
     class Meta:

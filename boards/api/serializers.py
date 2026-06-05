@@ -7,9 +7,10 @@ from tasks.api.serializers import TaskSerializer
 
 class BoardsSerializer(serializers.ModelSerializer):
     """
-    Serializer für die Board-Übersicht.
+    Serializes board data for list views.
 
-    Stellt die Basisinformationen eines Boards sowie aggregierte Kennzahlen wie Mitglieder-, Ticket- und Aufgabenstatistiken bereit.
+    ticket_count shows amount of tasks in the board.
+    tasks_to_do_count and task_high_prio_count shows how many of all task in the board are high prio and in to_do state.
     """
     member_count = serializers.SerializerMethodField()
     ticket_count = serializers.SerializerMethodField()
@@ -30,35 +31,21 @@ class BoardsSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "owner_id"]
 
     def get_member_count(self, obj):
-        """
-        Ermittelt die Anzahl der Mitglieder des Boards.
-        """
         return obj.member.count()
 
     def get_ticket_count(self, obj):
-        """
-        Ermittelt die Gesamtanzahl der Tasks des Boards.
-        """
         return obj.tasks.count()
 
     def get_tasks_to_do_count(self, obj):
-        """
-        Ermittelt die Anzahl der Tasks mit dem Status 'to-do'.
-        """
         return obj.tasks.filter(status="to-do").count()
 
     def get_tasks_high_prio_count(self, obj):
-        """
-        Ermittelt die Anzahl der Tasks mit hoher Priorität.
-        """
         return obj.tasks.filter(priority="high").count()
     
 
 class BoardCreateSerializer(serializers.ModelSerializer):
     """
-    Serializer zum Erstellen neuer Boards.
-
-    Validiert die übergebenen Mitglieder-IDs und erstellt anschließend das Board inklusive der zugehörigen Mitglieder.
+    Validates data for creating a new board with the given member IDs.
     """
     members = serializers.ListField(
         child=serializers.IntegerField(),
@@ -73,7 +60,10 @@ class BoardCreateSerializer(serializers.ModelSerializer):
 
     def validate_members(self, member_ids):
         """
-        Prüft, ob für alle übergebenen Benutzer-IDs entsprechende Benutzerprofile existieren.
+        Checks if the member id exists in the database.
+        profile.count takes the number of all existing profiles and compares this number with the amount of member ids given.
+        If it is even it returns the UserProfile data.
+        If the numbers are odd it returns a validation error.
         """
         profiles = UserProfile.objects.filter(user_id__in=member_ids)
 
@@ -85,9 +75,6 @@ class BoardCreateSerializer(serializers.ModelSerializer):
         return profiles
 
     def create(self, validated_data):
-        """
-        Erstellt ein neues Board und verknüpft die angegebenen Mitglieder mit dem Board.
-        """
         profiles = validated_data.pop("members", [])
         owner = self.context["request"].user
 
@@ -99,9 +86,7 @@ class BoardCreateSerializer(serializers.ModelSerializer):
 
 class BoardDetailSerializer(serializers.ModelSerializer):
     """
-    Serializer für die Detailansicht eines Boards.
-
-    Enthält die vollständigen Board-Informationen inklusive Mitglieder und zugehöriger Tasks.
+    Serializes detailed information about a single board.
     """
     tasks = TaskSerializer(many=True, read_only=True, exclude_fields=["board"])
     members = UserShortProfileSerializer(source="member", many=True, read_only=True)
@@ -114,9 +99,9 @@ class BoardDetailSerializer(serializers.ModelSerializer):
 
 class BoardPatchSerializer(serializers.ModelSerializer):
     """
-    Serializer für Teilaktualisierungen eines Boards.
-
-    Unterstützt das Ändern des Board-Titels sowie das Aktualisieren der Mitgliederliste.
+    Serializer to validate update data for a single board.
+    Only the title and members can be modified.
+    Checks if all given member ID's exist in the database and returns a validation error message if they don't exist.
     """
     members = serializers.ListField(
         child=serializers.IntegerField(),
@@ -128,10 +113,6 @@ class BoardPatchSerializer(serializers.ModelSerializer):
         fields = ["title", "members"]
 
     def validate_members(self, member_ids):
-        """
-        Prüft, ob für alle übergebenen Benutzer-IDs
-        entsprechende Benutzerprofile existieren.
-        """
         profiles = UserProfile.objects.filter(user_id__in=member_ids)
 
         if profiles.count() != len(member_ids):
@@ -142,9 +123,6 @@ class BoardPatchSerializer(serializers.ModelSerializer):
         return profiles
 
     def update(self, instance, validated_data):
-        """
-        Aktualisiert die Board-Daten und ersetzt bei Bedarf die bestehende Mitgliederliste.
-        """
         profiles = validated_data.pop("members", None)
 
         instance = super().update(instance, validated_data)
@@ -157,9 +135,10 @@ class BoardPatchSerializer(serializers.ModelSerializer):
 
 class BoardUpdateResponseSerializer(serializers.ModelSerializer):
     """
-    Serializer für die Antwort nach einer erfolgreichen Board-Aktualisierung.
+    Serializer for board update responses.
 
-    Ergänzt die Board-Daten um detaillierte Informationen zum Eigentümer und zu allen Mitgliedern.
+    Validates data and forms a detailed response with all data from the updated board.
+    Provides more information than BoardPatchSerializer, including owner and member details.
     """
     owner_data = serializers.SerializerMethodField()
     members_data = UserShortProfileSerializer(
@@ -173,10 +152,6 @@ class BoardUpdateResponseSerializer(serializers.ModelSerializer):
         fields = ["id", "title", "owner_data", "members_data"]
 
     def get_owner_data(self, obj):
-        """
-        Erstellt die Profildaten des Board-Eigentümers
-        für die API-Antwort.
-        """
         return {
             "id": obj.owner.id,
             "email": obj.owner.email,

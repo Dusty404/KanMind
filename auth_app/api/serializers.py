@@ -6,6 +6,17 @@ from auth_app.models import UserProfile
 
 
 class RegistrationSerializer(serializers.ModelSerializer):
+    """
+    Validates data for creating a new account in the database.
+
+    Returns an error if the provided email address already exists.
+
+    Creates two database entries:
+    - User for login credentials
+    - UserProfile for all board, task, and comment relations
+
+    User and UserProfile IDs may be different.
+    """
     fullname = serializers.CharField(max_length=150)
     repeated_password = serializers.CharField(write_only=True)
 
@@ -35,6 +46,9 @@ class RegistrationSerializer(serializers.ModelSerializer):
             })
 
     def create(self, validated_data):
+        """
+        Coordinates the creation of a User and UserProfile in the database.
+        """
         fullname = validated_data.pop("fullname")
         validated_data.pop("repeated_password")
         user = self.create_user(validated_data)
@@ -79,6 +93,9 @@ class CustomLoginSerializer(serializers.Serializer):
         return user
 
 class UserShortProfileSerializer(serializers.ModelSerializer):
+    """
+    Serializes UserProfile data for use in other serializers.
+    """
     id = serializers.IntegerField(source="user.id", read_only=True)
     email = serializers.EmailField(source="user.email")
 

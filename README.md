@@ -84,6 +84,15 @@ pip install -r requirements.txt
 
 ---
 
+## Create Daterbank migrations
+
+```bash
+python manage.py makemigrations
+```
+
+---
+
+
 ## Run migrations
 
 ```bash

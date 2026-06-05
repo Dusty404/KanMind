@@ -3,20 +3,11 @@ from rest_framework.exceptions import PermissionDenied
 
 class CommentPermission(permissions.BasePermission):
     """
-    Regelt den Zugriff auf Kommentare und kommentierbare Tasks.
-
-    Lesen und Erstellen von Kommentaren ist für den Task-Eigentümer, den Board-Eigentümer sowie für Mitglieder des zugehörigen Boards erlaubt.
-
-    Das Löschen eines Kommentars ist ausschließlich dem Ersteller des Kommentars gestattet.
+    Controls access to comments and commentable tasks.
+    Reading and creating comments is allowed for the task owner, the board owner, and members of the associated board.
+    Deleting a comment is restricted to the comment author only.
     """
     def has_object_permission(self, request, view, obj):
-        """
-        Prüft die Berechtigung für die angeforderte Aktion.
-
-        Für Lese- und Schreiboperationen wird die Berechtigung anhand der zugehörigen Task geprüft.
-
-        Für Löschoperationen wird die Berechtigung anhand des Kommentars selbst geprüft.
-        """
         if hasattr(obj, "task"):
             task = obj.task
         else:
@@ -31,9 +22,6 @@ class CommentPermission(permissions.BasePermission):
         return False
 
     def _has_delete_permission(self, request, comment):
-        """
-        Erlaubt das Löschen eines Kommentars ausschließlich für dessen Ersteller.
-        """
         if comment.owner_id == request.user.id:
             return True
 
@@ -42,13 +30,6 @@ class CommentPermission(permissions.BasePermission):
         })
     
     def _has_read_or_write_permission(self, request, task):
-        """
-        Erlaubt das Lesen und Erstellen von Kommentaren für:
-
-        - den Eigentümer der Task
-        - den Eigentümer des Boards
-        - Mitglieder des zugehörigen Boards
-        """
         if (
             task.owner_id == request.user.id
             or task.board.owner_id == request.user.id

@@ -7,9 +7,8 @@ from ..models import Task
 
 class TaskSerializer(serializers.ModelSerializer):
     """
-    Serializer für Tasks.
-
-    Stellt Task-Daten für die API bereit und verarbeitet die Erstellung neuer Tasks inklusive Berechtigungsprüfung und automatischer Mitgliederverwaltung.
+    Provides task data for the API and handles the creation of new tasks, including permission checks and automatic board member management.
+    When a task is created, the serializer automatically adds the assignee and reviewer to the board members if they are not already members.
     """
     assignee_id = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(),
@@ -58,30 +57,20 @@ class TaskSerializer(serializers.ModelSerializer):
 
     def __init__(self, *args, **kwargs):
         """
-        Initialisiert den Serializer und entfernt optional angegebene Felder aus der Serialisierung.
+        Initializes the serializer and removes any fields specified in the exclude_fields parameter from the serialization.
         """
         exclude_fields = kwargs.pop("exclude_fields", [])
         super().__init__(*args, **kwargs)
         self._remove_excluded_fields(exclude_fields)
 
     def get_comments_count(self, obj):
-        """
-        Ermittelt die Anzahl der Kommentare einer Task.
-        """
         return obj.comments.count()
 
     def _remove_excluded_fields(self, exclude_fields):
-        """
-        Entfernt die angegebenen Felder dynamisch aus dem Serializer.
-        """
         for field in exclude_fields:
             self.fields.pop(field, None)
 
     def validate(self, attrs):
-        """
-        Prüft, ob der aktuelle Benutzer auf dem angegebenen Board
-        Tasks erstellen darf.
-        """
         board = attrs.get("board")
 
         if board and not self._can_create_task(board):
@@ -92,10 +81,6 @@ class TaskSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        """
-        Erstellt eine neue Task und fügt Assignee und Reviewer
-        bei Bedarf automatisch als Board-Mitglieder hinzu.
-        """
         request = self.context["request"]
         task = Task.objects.create(owner=request.user, **validated_data)
         self._add_profiles_to_board(task)
@@ -103,12 +88,11 @@ class TaskSerializer(serializers.ModelSerializer):
 
     def _can_create_task(self, board):
         """
-        Prüft, ob der aktuelle Benutzer auf dem Board
-        Tasks erstellen darf.
+        Checks whether the user is allowed to create a task.
 
-        Erlaubt sind:
-        - der Board-Eigentümer
-        - Mitglieder des Boards
+        Users allowed to create a task are:
+        - The board owner
+        - Members of the board
         """
         request = self.context["request"]
 
@@ -119,8 +103,7 @@ class TaskSerializer(serializers.ModelSerializer):
 
     def _add_profiles_to_board(self, task):
         """
-        Fügt Assignee und Reviewer der Task automatisch
-        als Mitglieder zum Board hinzu.
+        Adds the assignee and reviewer to the board members if they are not already members.
         """
         profiles = []
 
@@ -135,10 +118,9 @@ class TaskSerializer(serializers.ModelSerializer):
 
 class TaskPatchSerializer(TaskSerializer):
     """
-    Serializer für Teilaktualisierungen einer Task.
+    Handles updates to existing tasks.
 
-    Erlaubt das Bearbeiten von Task-Daten ohne Änderung
-    der Board-Zuordnung.
+    The board ID cannot be changed during a task update.
     """
     class Meta(TaskSerializer.Meta):
         fields = [
@@ -153,9 +135,3 @@ class TaskPatchSerializer(TaskSerializer):
             "reviewer",
             "due_date",
         ]
-
-    def validate(self, attrs):
-        """
-        Überschreibt die Create-Validierung, da bei einem Patch keine Board-Berechtigung geprüft werden muss.
-        """
-        return attrs

@@ -9,10 +9,21 @@ from .serializers import CustomLoginSerializer, RegistrationSerializer
 
 
 class RegistrationView(APIView):
+    """
+    Handles user registration.
+
+    Creates a new User and UserProfile, generates an authentication token,
+    and returns the user's authentication data.
+    """
     permission_classes = [AllowAny]
     serializer_class = RegistrationSerializer
 
     def post(self, request):
+        """
+        Validates registration data and creates a new user account.
+
+        Returns authentication data on success or a validation error on failure.
+        """
         serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
@@ -36,6 +47,11 @@ class RegistrationView(APIView):
 
 
 class CustomLoginView(ObtainAuthToken):
+    """
+    Handles user authentication.
+
+    Validates login credentials and returns an authentication token and user information.
+    """
     permission_classes = [AllowAny]
     serializer_class = CustomLoginSerializer
 
