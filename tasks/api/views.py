@@ -11,12 +11,6 @@ from .serializers import TaskSerializer, TaskPatchSerializer
 
 
 class TasksViewSet(viewsets.ModelViewSet):
-    """
-    Manages CRUD operations for tasks.
-
-    Allows users to create, retrieve, update, and delete tasks
-    while enforcing the defined permissions.
-    """
     permission_classes = [IsAuthenticated, TaskPermission]
     serializer_class = TaskSerializer
     queryset = Task.objects.all()
@@ -57,6 +51,9 @@ class TasksViewSet(viewsets.ModelViewSet):
         return Response(response_serializer.data, status=status.HTTP_200_OK)
 
     def _validate_task_pk(self):
+        """
+        Checks if the primary key is a number.
+        If the pk is not a number it returns an validation error"""
         pk = self.kwargs.get("pk")
         if not str(pk).isdigit():
             raise ValidationError({
@@ -90,9 +87,6 @@ class TasksViewSet(viewsets.ModelViewSet):
 
 
 class TasksAssignedToUserView(generics.ListAPIView):
-    """
-    Returns all tasks assigned to the currently authenticated user.
-    """
     permission_classes = [IsAuthenticated]
     serializer_class = TaskSerializer
 
@@ -101,10 +95,6 @@ class TasksAssignedToUserView(generics.ListAPIView):
 
 
 class ReviewingView(generics.ListAPIView):
-    """
-    Returns all tasks where the currently authenticated user is assigned
-    as the reviewer.
-    """
     permission_classes = [IsAuthenticated]
     serializer_class = TaskSerializer
 

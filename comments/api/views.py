@@ -29,6 +29,10 @@ class CommentsView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request, task_id):
+        """
+        Handles the creation of new comment for a specific task.
+        If the comment is empty it returns a status 400 error.
+        """
         task = self._get_task_or_error()
         self.check_object_permissions(request, task)
         if not request.data.get("content", "").strip():
